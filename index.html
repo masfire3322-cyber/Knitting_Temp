@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFI Knitting Flow Real Time Temperature</title>
+    <style>
+        /* General Styles */
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden; /* Allow vertical scrolling, prevent horizontal overflow */
+            background: #003366; /* Light blue background */
+        }
+
+        /* Header */
+        header {
+            background-color: #003366;
+            color: #f4f4f4;
+            text-align: center;
+            padding: 1.5em 0;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        header h1 {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 0;
+        }
+
+        header p {
+            font-size: 1.1em;
+            font-weight: lighter;
+            margin: 0;
+            color: #a2d9ff;
+        }
+
+        .status-display {
+            margin-top: 10px;
+            font-size: 1.2em;
+            color: #59e03a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .status-circle {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: white;
+            border: 2px solid #ccc;
+        }
+
+        .connection-good {
+            background-color: #00ff00;
+            border: none;
+        }
+
+        .connection-bad {
+            background-color: white;
+            border: 2px solid #ccc;
+        }
+
+        /* Responsive Container */
+        .container {
+            padding: 7px;
+            margin: 3px auto;
+            background: rgba(0, 51, 102, 0.8);
+            box-shadow: 0 5px 12px rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); /* Smaller boxes */
+            gap: 7px; /* Reduced gap between boxes */
+            width: 90%;
+            max-width: 1200px;
+        }
+
+        /* Box Styles */
+        .temperature-box {
+            border: 3px solid rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 2px; /* Reduced padding */
+            font-size: 0.8em; /* Reduced font size */
+            text-align: center;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #003366;
+            font-weight: bold;
+            transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.5s ease;
+            box-shadow: 0 4px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Hover Effect */
+        .temperature-box:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .low-temp {
+            background-color: #6e2dd6;
+            color: white;
+        }
+
+        .mid-temp {
+            background-color: #2ee809;
+            color: black;
+        }
+
+        .high-temp {
+            background-color: #d61139;
+            color: white;
+        }
+
+        .value {
+            font-size: 1.3em; /* Slightly smaller text */
+            margin-top: 5px;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        /* Popup Animation */
+        .popup {
+            animation: popupEffect 0.6s ease-in-out;
+        }
+
+        @keyframes popupEffect {
+            0% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* Animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* Overlay */
+        #error-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: #ffcccb;
+            font-size: 2em;
+            text-align: center;
+            padding-top: 20%;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        #error-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>MFI Knitting Flow Real Time Temperature</h1>
+        <p>Software Design: Uditha Asiri MFI Engineering</p>
+        <div class="status-display">
+            <div id="connection-circle" class="status-circle connection-bad"></div>
+            Live
+        </div>
+    </header>
+    <div id="temperature-container" class="container"></div>
+    <div id="error-overlay">Connection Error. Please Check Your Internet Connection.</div>
+
+    <script>
+        const baseUrl = "https://knitting-flow-temperature-live-default-rtdb.asia-southeast1.firebasedatabase.app/";
+        const authKey = "vqjdaadmQXfVoZ7YoxuDvlRsCLgbNeGjIJIfzXVM";
+        const connectionUrl = `${baseUrl}connection:.json?auth=${authKey}`;
+        const temperatureContainer = document.getElementById("temperature-container");
+        const connectionCircle = document.getElementById("connection-circle");
+        const errorOverlay = document.getElementById("error-overlay");
+
+        let lastConnectionValue = null;
+        let lastUpdateTime = Date.now();
+
+        const showErrorOverlay = () => errorOverlay.classList.add("active");
+        const hideErrorOverlay = () => errorOverlay.classList.remove("active");
+
+        const updateConnectionCircle = (isConnected) => {
+            if (isConnected) {
+                connectionCircle.classList.remove("connection-bad");
+                connectionCircle.classList.add("connection-good");
+            } else {
+                connectionCircle.classList.remove("connection-good");
+                connectionCircle.classList.add("connection-bad");
+            }
+        };
+
+        const checkConnection = async () => {
+            try {
+                const response = await fetch(connectionUrl);
+                if (!response.ok) throw new Error("Error fetching connection status");
+
+                const connectionValue = await response.json();
+                const currentTime = Date.now();
+
+                updateConnectionCircle(connectionValue === 1);
+
+                if (connectionValue !== lastConnectionValue) {
+                    lastConnectionValue = connectionValue;
+                    lastUpdateTime = currentTime;
+                    hideErrorOverlay();
+                } else if (currentTime - lastUpdateTime > 5000) {
+                    showErrorOverlay();
+                    updateConnectionCircle(false);
+                }
+            } catch (error) {
+                console.error("Connection Error: ", error.message);
+                showErrorOverlay();
+                updateConnectionCircle(false);
+            }
+        };
+
+        const initializeBoxes = () => {
+            for (let i = 1; i <= 23; i++) {
+                const box = document.createElement("div");
+                box.id = `module-${i}`;
+                box.className = "temperature-box";
+                box.innerHTML = 
+                    `<h3>Module ${i.toString().padStart(2, '0')}</h3>
+                    <div class="value">Loading...</div>`;
+                temperatureContainer.appendChild(box);
+            }
+        };
+
+        const updateBoxColor = (box, temperature) => {
+            box.classList.remove("low-temp", "mid-temp", "high-temp");
+            if (temperature <= 23.4) {
+                box.classList.add("low-temp");
+            } else if (temperature >= 23.5 && temperature <= 26.5) {
+                box.classList.add("mid-temp");
+            } else if (temperature >= 26.6) {
+                box.classList.add("high-temp");
+            }
+        };
+
+        const updateTemperatures = async () => {
+            for (let i = 1; i <= 23; i++) {
+                const url = `${baseUrl}Module_${i.toString().padStart(2, '0')}_:.json?auth=${authKey}`;
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`Module ${i} - Error fetching data`);
+
+                    const data = await response.json();
+                    const box = document.getElementById(`module-${i}`);
+                    if (box) {
+                        const valueElement = box.querySelector(".value");
+                        const previousValue = parseFloat(valueElement.textContent) || null;
+                        const newValue = parseFloat(data);
+
+                        if (previousValue !== newValue) {
+                            valueElement.textContent = `${data || "N/A"} °C`;
+                            updateBoxColor(box, newValue);
+                            // Add popup effect
+                            box.classList.add("popup");
+                            setTimeout(() => {
+                                box.classList.remove("popup");
+                            }, 600); // Match animation duration
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error fetching Module ${i}: ${error.message}`);
+                }
+            }
+        };
+
+        window.onload = () => {
+            initializeBoxes();
+            checkConnection();
+            setInterval(checkConnection, 500);
+            setInterval(updateTemperatures, 3000);
+        };
+    </script>
+</body>
+</html>
